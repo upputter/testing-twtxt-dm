@@ -36,7 +36,7 @@
 
     $message_encrypted = $encryptor->encrypt($message);
 
-    $filename = './messages/encryption_test_' . date('Ymdhis') . 'enc';
+    $filename = './messages/encryption_test_' . date('Ymdhis') . '.enc';
 
     file_put_contents($filename, $message_encrypted);
 

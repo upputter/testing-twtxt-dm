@@ -8,12 +8,15 @@
 // https://www.php.net/manual/en/function.openssl-pbkdf2.php
 // https://github.com/meixler/web-browser-based-file-encryption-decryption/tree/master
 // https://github.com/blocktrail/cryptojs-aes-php/blob/master/src/CryptoJSAES.php
+// https://crypto.stackexchange.com/questions/3298/is-there-a-standard-for-openssl-interoperable-aes-encryption/79855#79855
+// https://eapl.me/tw.txt
 
 class TwtxtDirectMessage
 {
     public const CYPHER = 'aes-256-cbc';
     public const SALTSIZE = 8;
     public const ITERATIONS = 100000;
+    public const PBKDF2_KEY_SIZE = 48;
     public const PBKDF2_ALGO = 'sha256';
 
     protected $salt;
@@ -74,20 +77,26 @@ class TwtxtDirectMessage
         return $decryptedMessage;
     }
 
-    protected function aesEncryption($passphrase, $data)
+    protected function aesEncryption($pbkdf2key, $data)
     {
-        list($key, $iv) = $this->evpkdf($passphrase, $this->salt);
+        $iv = $this->getIVfromEPBKDF2key($pbkdf2key);
+        $this->debug('iv (B64): ' . base64_encode($iv) . ' (' . strlen($iv) .')');
+
         $encryptedData = openssl_encrypt(
             $data,
             self::CYPHER,
-            $key,
+            $pbkdf2key,
             true,
             $iv
         );
         return $this->encode($encryptedData, $this->salt);
     }
 
-    protected function aesDecryption($passphrase, $encData)
+    protected function getIVfromEPBKDF2key($pbkdf2key) {        
+        return hex2bin(substr(bin2hex($pbkdf2key), 64, 32));  // iv is bytes 32 to 47 of the pbkdf2key | use HEX for safer handling      
+    }
+
+    protected function aesDecryption($pbkdf2key, $encData)
     {
         if ($this->is_base64($encData)) {
             $this->debug('B64-decode encrypted data.');
@@ -95,14 +104,13 @@ class TwtxtDirectMessage
         }
 
         $decodedData = $this->decode($encData);
-        list($key, $iv) = $this->evpkdf($passphrase, $this->salt);
-
+        $iv = $this->getIVfromEPBKDF2key($pbkdf2key);
         $this->debug('iv (B64): ' . base64_encode($iv) . ' (' . strlen($iv) .')');
 
         $data = openssl_decrypt(
             $decodedData['data'],
             self::CYPHER,
-            $key,
+            $pbkdf2key,
             true,
             $iv
         );
@@ -148,11 +156,11 @@ class TwtxtDirectMessage
     }
 
     protected function generatEPBKDF2key($key)
-    {
+    {     
         $generated_key = openssl_pbkdf2(
             $key, // the shared key
             $this->salt,
-            strlen($key), // length of the shared key
+            self::PBKDF2_KEY_SIZE, // length of the desired output key
             self::ITERATIONS,
             self::PBKDF2_ALGO
         );
